@@ -25,10 +25,11 @@ const screens = {
   results: document.getElementById("results-screen"),
 };
 
-const courseSelect = document.getElementById("course-select");
+const courseGrid = document.getElementById("course-grid");
 const generateBtn = document.getElementById("generate-btn");
 const retryBtn = document.getElementById("retry-btn");
 const errorMessage = document.getElementById("error-message");
+const quizCourseName = document.getElementById("quiz-course-name");
 const questionCounter = document.getElementById("question-counter");
 const progressFill = document.getElementById("progress-fill");
 const questionText = document.getElementById("question-text");
@@ -43,6 +44,7 @@ const restartBtn = document.getElementById("restart-btn");
 let quiz = null;
 let currentIndex = 0;
 let score = 0;
+let selectedCourse = null;
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -52,10 +54,24 @@ function showScreen(name) {
 
 function populateCourses() {
   COURSES.forEach((course) => {
-    const option = document.createElement("option");
-    option.value = course;
-    option.textContent = course;
-    courseSelect.appendChild(option);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "course-card";
+    card.textContent = course;
+    card.setAttribute("aria-pressed", "false");
+    card.addEventListener("click", () => selectCourse(course));
+    courseGrid.appendChild(card);
+  });
+}
+
+function selectCourse(course) {
+  selectedCourse = course;
+  generateBtn.disabled = false;
+
+  courseGrid.querySelectorAll(".course-card").forEach((card) => {
+    const isSelected = card.textContent === course;
+    card.classList.toggle("selected", isSelected);
+    card.setAttribute("aria-pressed", String(isSelected));
   });
 }
 
@@ -74,11 +90,11 @@ async function fetchQuiz(course) {
 }
 
 async function handleGenerate() {
-  const course = courseSelect.value;
+  if (!selectedCourse) return;
   showScreen("loading");
 
   try {
-    quiz = await fetchQuiz(course);
+    quiz = await fetchQuiz(selectedCourse);
   } catch (err) {
     // Backend isn't built yet in early sessions, fall back to a sample quiz
     // instead of dead-ending the demo.
@@ -94,6 +110,7 @@ async function handleGenerate() {
 function renderQuestion() {
   const question = quiz.questions[currentIndex];
 
+  quizCourseName.textContent = quiz.course;
   questionCounter.textContent = `Question ${currentIndex + 1} of ${quiz.questions.length}`;
   progressFill.style.width = `${(currentIndex / quiz.questions.length) * 100}%`;
   questionText.textContent = question.question;
@@ -154,6 +171,12 @@ function handleRestart() {
   quiz = null;
   currentIndex = 0;
   score = 0;
+  selectedCourse = null;
+  generateBtn.disabled = true;
+  courseGrid.querySelectorAll(".course-card").forEach((card) => {
+    card.classList.remove("selected");
+    card.setAttribute("aria-pressed", "false");
+  });
   showScreen("select");
 }
 
