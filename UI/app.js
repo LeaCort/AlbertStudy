@@ -106,11 +106,19 @@ function renderCourses() {
   });
 }
 
+// On a phone the chapter list sits far below the course cards, so scroll to it.
+function scrollToChapters() {
+  if (window.matchMedia("(max-width: 720px)").matches) {
+    chapterSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function selectCourse(course) {
   selectedCourse = course;
   selectedChapter = null;
   renderCourses();
   renderChapters();
+  scrollToChapters();
 }
 
 function renderChapters() {
@@ -199,6 +207,7 @@ function renderQuestion() {
 
   feedback.classList.add("hidden");
   showScreen("quiz");
+  window.scrollTo(0, 0);
 }
 
 function handleAnswer(selectedIndex) {
@@ -222,6 +231,8 @@ function handleAnswer(selectedIndex) {
   feedbackText.textContent = isCorrect ? "Correct!" : "Not quite.";
   sourceQuote.textContent = `"${question.source_quote}"`;
   feedback.classList.remove("hidden");
+  // Keep the feedback and the Next button visible on small screens.
+  feedback.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function handleNext() {
@@ -237,6 +248,7 @@ function showResults() {
   progressFill.style.width = "100%";
   scoreText.textContent = `You scored ${score} / ${quiz.questions.length}`;
   showScreen("results");
+  window.scrollTo(0, 0);
 }
 
 // Back to the chapter list of the same course, ready to pick another quiz.
@@ -246,6 +258,7 @@ function handleRestart() {
   score = 0;
   selectedChapter = null;
   showScreen("select");
+  scrollToChapters();
 }
 
 retryBtn.addEventListener("click", () => handleGenerate());
