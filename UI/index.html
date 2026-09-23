@@ -20,9 +20,13 @@
       <div class="badge"><span class="dot" aria-hidden="true"></span>Pick a course to train on</div>
       <h1 class="page-title">Choose a <em>course</em></h1>
 
+      <div id="category-tabs" class="category-tabs" role="group" aria-label="Course category"></div>
       <div id="course-grid" class="course-grid"></div>
 
-      <button id="generate-btn" type="button" disabled>Generate quiz</button>
+      <div id="chapter-section" class="chapter-section hidden">
+        <h2 id="chapter-heading">Pick a chapter to start its quiz</h2>
+        <div id="chapter-list" class="chapter-list"></div>
+      </div>
     </section>
 
     <section id="loading-screen" class="screen hidden">
@@ -58,10 +62,11 @@
       <p class="eyebrow">Results</p>
       <h2 class="page-title">Quiz <em>complete</em></h2>
       <p id="score-text" class="score-text"></p>
-      <button id="restart-btn" type="button">Try another course</button>
+      <button id="restart-btn" type="button">Choose another chapter</button>
     </section>
   </main>
 
+  <script src="courses.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

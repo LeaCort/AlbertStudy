@@ -1,6 +1,9 @@
-// Placeholder until the course list comes from data/courses/ via a real endpoint.
-const COURSES = ["Microeconomics", "Statistics"];
+// CATALOG (categories > courses > chapters) comes from courses.js, which is
+// generated from DATA/ by scripts/build-course-catalog.js.
 const NUM_QUESTIONS = 5;
+
+// Front matter and reading lists make poor quiz material, so they get no quiz.
+const SKIPPED = /^(preface|further reading|primary sources)/i;
 
 // Used only when the generate-quiz function isn't reachable yet, so the UI
 // can still be demoed/tested before the backend exists.
@@ -25,8 +28,11 @@ const screens = {
   results: document.getElementById("results-screen"),
 };
 
+const categoryTabs = document.getElementById("category-tabs");
 const courseGrid = document.getElementById("course-grid");
-const generateBtn = document.getElementById("generate-btn");
+const chapterSection = document.getElementById("chapter-section");
+const chapterHeading = document.getElementById("chapter-heading");
+const chapterList = document.getElementById("chapter-list");
 const retryBtn = document.getElementById("retry-btn");
 const errorMessage = document.getElementById("error-message");
 const quizCourseName = document.getElementById("quiz-course-name");
@@ -44,7 +50,9 @@ const restartBtn = document.getElementById("restart-btn");
 let quiz = null;
 let currentIndex = 0;
 let score = 0;
+let selectedCategory = CATALOG[0];
 let selectedCourse = null;
+let selectedChapter = null;
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -52,13 +60,47 @@ function showScreen(name) {
   });
 }
 
-function populateCourses() {
-  COURSES.forEach((course) => {
+function renderCategories() {
+  categoryTabs.innerHTML = "";
+  CATALOG.forEach((category) => {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "category-tab";
+    tab.textContent = category.label;
+    tab.setAttribute("aria-pressed", String(category === selectedCategory));
+    tab.classList.toggle("selected", category === selectedCategory);
+    tab.addEventListener("click", () => selectCategory(category));
+    categoryTabs.appendChild(tab);
+  });
+}
+
+function selectCategory(category) {
+  selectedCategory = category;
+  selectedCourse = null;
+  selectedChapter = null;
+  renderCategories();
+  renderCourses();
+  renderChapters();
+}
+
+function renderCourses() {
+  courseGrid.innerHTML = "";
+  selectedCategory.courses.forEach((course) => {
+    const isSelected = course === selectedCourse;
     const card = document.createElement("button");
     card.type = "button";
     card.className = "course-card";
-    card.textContent = course;
-    card.setAttribute("aria-pressed", "false");
+    card.classList.toggle("selected", isSelected);
+    card.setAttribute("aria-pressed", String(isSelected));
+
+    const code = document.createElement("span");
+    code.className = "course-code";
+    code.textContent = course.code;
+    const name = document.createElement("span");
+    name.className = "course-name";
+    name.textContent = course.name;
+    card.append(code, name);
+
     card.addEventListener("click", () => selectCourse(course));
     courseGrid.appendChild(card);
   });
@@ -66,20 +108,48 @@ function populateCourses() {
 
 function selectCourse(course) {
   selectedCourse = course;
-  generateBtn.disabled = false;
-
-  courseGrid.querySelectorAll(".course-card").forEach((card) => {
-    const isSelected = card.textContent === course;
-    card.classList.toggle("selected", isSelected);
-    card.setAttribute("aria-pressed", String(isSelected));
-  });
+  selectedChapter = null;
+  renderCourses();
+  renderChapters();
 }
 
-async function fetchQuiz(course) {
+function renderChapters() {
+  chapterSection.classList.toggle("hidden", !selectedCourse);
+  chapterList.innerHTML = "";
+  if (!selectedCourse) return;
+
+  chapterHeading.textContent = `${selectedCourse.name}: pick a chapter to start its quiz`;
+
+  selectedCourse.chapters
+    .filter((chapter) => !SKIPPED.test(chapter.title))
+    .forEach((chapter) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chapter-item";
+
+      // File ids look like "03-internal-rate-of-return"; show the "03".
+      const number = document.createElement("span");
+      number.className = "chapter-number";
+      number.textContent = chapter.id.split("-")[0];
+      const title = document.createElement("span");
+      title.textContent = chapter.title;
+      btn.append(number, title);
+
+      btn.addEventListener("click", () => handleGenerate(chapter));
+      chapterList.appendChild(btn);
+    });
+}
+
+async function fetchQuiz() {
   const response = await fetch("/.netlify/functions/generate-quiz", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ course, numQuestions: NUM_QUESTIONS }),
+    body: JSON.stringify({
+      category: selectedCategory.id,
+      course: selectedCourse.code,
+      chapter: selectedChapter.id,
+      numQuestions: NUM_QUESTIONS,
+    }),
   });
 
   if (!response.ok) {
@@ -89,12 +159,14 @@ async function fetchQuiz(course) {
   return response.json();
 }
 
-async function handleGenerate() {
-  if (!selectedCourse) return;
+// chapter is omitted when retrying after an error (the choice is still stored).
+async function handleGenerate(chapter = selectedChapter) {
+  if (!selectedCourse || !chapter) return;
+  selectedChapter = chapter;
   showScreen("loading");
 
   try {
-    quiz = await fetchQuiz(selectedCourse);
+    quiz = await fetchQuiz();
   } catch (err) {
     // Backend isn't built yet in early sessions, fall back to a sample quiz
     // instead of dead-ending the demo.
@@ -110,7 +182,7 @@ async function handleGenerate() {
 function renderQuestion() {
   const question = quiz.questions[currentIndex];
 
-  quizCourseName.textContent = quiz.course;
+  quizCourseName.textContent = `${selectedCourse.code} · ${selectedChapter.title}`;
   questionCounter.textContent = `Question ${currentIndex + 1} of ${quiz.questions.length}`;
   progressFill.style.width = `${(currentIndex / quiz.questions.length) * 100}%`;
   questionText.textContent = question.question;
@@ -167,23 +239,18 @@ function showResults() {
   showScreen("results");
 }
 
+// Back to the chapter list of the same course, ready to pick another quiz.
 function handleRestart() {
   quiz = null;
   currentIndex = 0;
   score = 0;
-  selectedCourse = null;
-  generateBtn.disabled = true;
-  courseGrid.querySelectorAll(".course-card").forEach((card) => {
-    card.classList.remove("selected");
-    card.setAttribute("aria-pressed", "false");
-  });
+  selectedChapter = null;
   showScreen("select");
 }
 
-generateBtn.addEventListener("click", handleGenerate);
-retryBtn.addEventListener("click", handleGenerate);
+retryBtn.addEventListener("click", () => handleGenerate());
 nextBtn.addEventListener("click", handleNext);
 restartBtn.addEventListener("click", handleRestart);
 
-populateCourses();
+selectCategory(selectedCategory);
 showScreen("select");
