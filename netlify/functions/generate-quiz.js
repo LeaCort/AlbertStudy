@@ -18,14 +18,16 @@ const PROMPT_FILE = path.join(process.cwd(), "PROMPT", "Quizz7.txt");
 const MIN_QUESTIONS = 3;
 const MAX_QUESTIONS = 5;
 const MIN_QUOTE_LENGTH = 20;
+// More chapters means a longer prompt and a slower answer, so the count is capped.
+const MAX_CHAPTERS = 8;
 
 class BadRequestError extends Error {}
 class UpstreamError extends Error {}
 
-// Finds the chapter file by whitelisting each level against what really exists
+// Finds the chapter files by whitelisting each level against what really exists
 // in DATA/. The client's values are only ever compared to directory entries,
 // never joined into a path, so "../" tricks cannot reach files outside DATA/.
-async function resolveChapter(category, course, chapter) {
+async function resolveChapters(category, course, requestedChapters) {
   const categories = await readdir(DATA_DIR, { withFileTypes: true });
   const categoryDir = categories.find(
     (entry) => entry.isDirectory() && entry.name === category
@@ -41,15 +43,20 @@ async function resolveChapter(category, course, chapter) {
   if (!courseDir) throw new BadRequestError("Unknown course");
   const coursePath = path.join(categoryPath, courseDir.name);
 
-  const chapters = await readdir(coursePath, { withFileTypes: true });
-  const chapterFile = chapters.find(
-    (entry) => entry.isFile() && entry.name === `${chapter}.md`
+  // Keeps the course order (00, 01, 02...) whatever order the client sent,
+  // and ignores duplicates.
+  const files = await readdir(coursePath, { withFileTypes: true });
+  const wanted = new Set(requestedChapters);
+  const chapterFiles = files.filter(
+    (entry) => entry.isFile() && entry.name.endsWith(".md") && wanted.has(entry.name.slice(0, -3))
   );
-  if (!chapterFile) throw new BadRequestError("Unknown chapter");
+  if (chapterFiles.length !== wanted.size) throw new BadRequestError("Unknown chapter");
 
   return {
     courseName: courseDir.name.slice(`${course} - `.length),
-    chapterPath: path.join(coursePath, chapterFile.name),
+    chapterPaths: chapterFiles
+      .map((entry) => path.join(coursePath, entry.name))
+      .sort(),
   };
 }
 
@@ -120,7 +127,7 @@ function collapseWhitespace(text) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-// Drops every question whose source_quote cannot be found in the chapter:
+// Drops every question whose source_quote cannot be found in the notes:
 // a quote the model made up means the question may not be grounded either.
 // Very short quotes ("NPV") would match almost anything, so they are refused.
 function keepGroundedQuestions(questions, notes) {
@@ -158,22 +165,31 @@ export default async (req) => {
     return Response.json({ error: "Request body must be valid JSON" }, { status: 400 });
   }
 
-  const { category, course, chapter, numQuestions } = body ?? {};
-  if (![category, course, chapter].every((value) => typeof value === "string" && value)) {
+  const { category, course, chapters, numQuestions } = body ?? {};
+  if (![category, course].every((value) => typeof value === "string" && value)) {
+    return Response.json({ error: "category and course are required strings" }, { status: 400 });
+  }
+  if (
+    !Array.isArray(chapters) ||
+    chapters.length === 0 ||
+    chapters.length > MAX_CHAPTERS ||
+    !chapters.every((value) => typeof value === "string" && value)
+  ) {
     return Response.json(
-      { error: "category, course and chapter are required strings" },
+      { error: `chapters must be a list of 1 to ${MAX_CHAPTERS} chapter names` },
       { status: 400 }
     );
   }
 
   try {
-    const { courseName, chapterPath } = await resolveChapter(category, course, chapter);
+    const { courseName, chapterPaths } = await resolveChapters(category, course, chapters);
     const { min, max } = questionRange(numQuestions);
 
-    const [template, notes] = await Promise.all([
+    const [template, ...chapterNotes] = await Promise.all([
       readFile(PROMPT_FILE, "utf8"),
-      readFile(chapterPath, "utf8"),
+      ...chapterPaths.map((chapterPath) => readFile(chapterPath, "utf8")),
     ]);
+    const notes = chapterNotes.join("\n\n");
 
     const prompt = fillTemplate(template, {
       COURSE_NAME: courseName,
