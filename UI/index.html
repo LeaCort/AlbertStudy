@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlbertStudy</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-dot" aria-hidden="true"></span>
+      <span class="logo-text"><strong>ALBERT</strong>STUDY</span>
+    </div>
+  </header>
+
+  <main class="app">
+    <section id="select-screen" class="screen">
+      <p class="eyebrow">My courses</p>
+      <div class="badge"><span class="dot" aria-hidden="true"></span>Pick a course to train on</div>
+      <h1 class="page-title">Choose a <em>course</em></h1>
+
+      <div id="course-grid" class="course-grid"></div>
+
+      <button id="generate-btn" type="button" disabled>Generate quiz</button>
+    </section>
+
+    <section id="loading-screen" class="screen hidden">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Generating your quiz&hellip;</p>
+    </section>
+
+    <section id="error-screen" class="screen hidden">
+      <p id="error-message" class="error-message" role="alert"></p>
+      <button id="retry-btn" type="button">Try again</button>
+    </section>
+
+    <section id="quiz-screen" class="screen hidden">
+      <p class="eyebrow" id="quiz-course-name"></p>
+      <div class="quiz-progress">
+        <span id="question-counter" class="badge"></span>
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+      </div>
+
+      <h2 id="question-text"></h2>
+      <div id="options-list" class="options-list"></div>
+
+      <div id="feedback" class="feedback hidden" role="status" aria-live="polite">
+        <p id="feedback-text"></p>
+        <p id="source-quote" class="source-quote"></p>
+        <button id="next-btn" type="button">Next question</button>
+      </div>
+    </section>
+
+    <section id="results-screen" class="screen hidden">
+      <p class="eyebrow">Results</p>
+      <h2 class="page-title">Quiz <em>complete</em></h2>
+      <p id="score-text" class="score-text"></p>
+      <button id="restart-btn" type="button">Try another course</button>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
