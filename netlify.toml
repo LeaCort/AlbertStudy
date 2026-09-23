@@ -1,0 +1,6 @@
+[build]
+  publish = "UI"
+  functions = "netlify/functions"
+
+[functions]
+  included_files = ["PROMPT/**", "DATA/**/*.md"]
