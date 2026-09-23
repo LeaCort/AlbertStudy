@@ -1,6 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
+const MODEL = "gemini-3.8-flash";
 const DATA_DIR = path.join(process.cwd(), "DATA");
 const PROMPT_FILE = path.join(process.cwd(), "PROMPT", "Quizz7.txt");
 
@@ -10,6 +12,7 @@ const MIN_QUESTIONS = 3;
 const MAX_QUESTIONS = 5;
 
 class BadRequestError extends Error {}
+class UpstreamError extends Error {}
 
 // Finds the chapter file by whitelisting each level against what really exists
 // in DATA/. The client's values are only ever compared to directory entries,
@@ -58,7 +61,33 @@ function questionRange(numQuestions) {
   return { min: MIN_QUESTIONS, max };
 }
 
+// The key is read on the server only: the browser never sees it.
+async function askGemini(prompt) {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        // Less "thinking" before answering keeps us under the function timeout.
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      },
+    });
+    return response.text;
+  } catch (err) {
+    // Keep the details (quota, network, bad key) in the logs, not in the response.
+    console.error("Gemini call failed:", err);
+    throw new UpstreamError("The quiz generator is unavailable, try again later");
+  }
+}
+
 export default async (req) => {
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("GEMINI_API_KEY is not set");
+    return Response.json({ error: "Server is not configured" }, { status: 500 });
+  }
+
   if (req.method !== "POST") {
     return Response.json({ error: "Method not allowed, use POST" }, { status: 405 });
   }
@@ -94,11 +123,16 @@ export default async (req) => {
       MAX_QUESTIONS: max,
     });
 
-    // Temporary: return the filled prompt until the Gemini call is wired in.
-    return Response.json({ course: courseName, minQuestions: min, maxQuestions: max, prompt });
+    const rawText = await askGemini(prompt);
+
+    // Temporary: return the model's raw text until it is parsed.
+    return Response.json({ course: courseName, rawText });
   } catch (err) {
     if (err instanceof BadRequestError) {
       return Response.json({ error: err.message }, { status: 400 });
+    }
+    if (err instanceof UpstreamError) {
+      return Response.json({ error: err.message }, { status: 502 });
     }
     console.error("generate-quiz failed:", err);
     return Response.json({ error: "Internal error while preparing the quiz" }, { status: 500 });
