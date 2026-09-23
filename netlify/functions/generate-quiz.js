@@ -82,6 +82,23 @@ async function askGemini(prompt) {
   }
 }
 
+// Only checks that the answer is a quiz at all. Validating each question
+// (4 options, answer_index in range...) is a separate task.
+function parseQuiz(rawText) {
+  let quiz;
+  try {
+    quiz = JSON.parse(rawText);
+  } catch {
+    console.error("Model returned invalid JSON:", rawText);
+    throw new UpstreamError("The quiz generator returned an invalid answer, try again");
+  }
+  if (!Array.isArray(quiz?.questions) || quiz.questions.length === 0) {
+    console.error("Model returned JSON without questions:", rawText);
+    throw new UpstreamError("The quiz generator returned an invalid answer, try again");
+  }
+  return quiz;
+}
+
 export default async (req) => {
   if (!process.env.GEMINI_API_KEY) {
     console.error("GEMINI_API_KEY is not set");
@@ -123,10 +140,10 @@ export default async (req) => {
       MAX_QUESTIONS: max,
     });
 
-    const rawText = await askGemini(prompt);
+    const quiz = parseQuiz(await askGemini(prompt));
 
-    // Temporary: return the model's raw text until it is parsed.
-    return Response.json({ course: courseName, rawText });
+    // The course name comes from DATA/, not from the model, so it is always right.
+    return Response.json({ course: courseName, questions: quiz.questions });
   } catch (err) {
     if (err instanceof BadRequestError) {
       return Response.json({ error: err.message }, { status: 400 });
