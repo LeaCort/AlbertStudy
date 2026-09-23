@@ -1,4 +1,7 @@
 [build]
+  # Regenerates UI/courses.js from DATA/ on every deploy, so the course
+  # catalog can never fall behind the notes.
+  command = "node scripts/build-course-catalog.js"
   publish = "UI"
   functions = "netlify/functions"
 
