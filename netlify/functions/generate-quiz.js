@@ -17,6 +17,7 @@ const PROMPT_FILE = path.join(process.cwd(), "PROMPT", "Quizz7.txt");
 // model answers before the Netlify function timeout (~10 s).
 const MIN_QUESTIONS = 3;
 const MAX_QUESTIONS = 5;
+const MIN_QUOTE_LENGTH = 20;
 
 class BadRequestError extends Error {}
 class UpstreamError extends Error {}
@@ -113,6 +114,33 @@ function parseQuiz(rawText) {
   return quiz;
 }
 
+// Chapters are hard-wrapped, so a sentence quoted by the model can span
+// several lines in the notes: quotes are compared with whitespace collapsed.
+function collapseWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+// Drops every question whose source_quote cannot be found in the chapter:
+// a quote the model made up means the question may not be grounded either.
+// Very short quotes ("NPV") would match almost anything, so they are refused.
+function keepGroundedQuestions(questions, notes) {
+  const searchableNotes = collapseWhitespace(notes);
+  const grounded = questions.filter((question) => {
+    if (typeof question.source_quote !== "string") return false;
+    const quote = collapseWhitespace(question.source_quote);
+    return quote.length >= MIN_QUOTE_LENGTH && searchableNotes.includes(quote);
+  });
+
+  const dropped = questions.length - grounded.length;
+  if (dropped > 0) {
+    console.warn(`Dropped ${dropped} question(s) whose source_quote is not in the notes`);
+  }
+  if (grounded.length === 0) {
+    throw new UpstreamError("The quiz generator returned no question backed by the chapter, try again");
+  }
+  return grounded;
+}
+
 export default async (req) => {
   if (!process.env.GEMINI_API_KEY) {
     console.error("GEMINI_API_KEY is not set");
@@ -155,9 +183,10 @@ export default async (req) => {
     });
 
     const quiz = parseQuiz(await askGemini(prompt));
+    const questions = keepGroundedQuestions(quiz.questions, notes);
 
     // The course name comes from DATA/, not from the model, so it is always right.
-    return Response.json({ course: courseName, questions: quiz.questions });
+    return Response.json({ course: courseName, questions });
   } catch (err) {
     if (err instanceof BadRequestError) {
       return Response.json({ error: err.message }, { status: 400 });
