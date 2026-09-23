@@ -1,11 +1,14 @@
 // Scans DATA/<category>/<CODE - Course name>/NN-chapter.md and writes
 // UI/courses.js, so the UI never hardcodes the course list.
 // Run from the repo root: node scripts/build-course-catalog.js
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const DATA_DIR = path.join(__dirname, "..", "DATA");
-const OUT_FILE = path.join(__dirname, "..", "UI", "courses.js");
+// package.json sets "type": "module", so this file is an ES module (no require/__dirname).
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const DATA_DIR = path.join(ROOT, "DATA");
+const OUT_FILE = path.join(ROOT, "UI", "courses.js");
 
 const CATEGORY_LABELS = {
   BUS: "Business",
