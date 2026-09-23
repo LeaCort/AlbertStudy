@@ -1,6 +1,8 @@
 // CATALOG (categories > courses > chapters) comes from courses.js, which is
 // generated from DATA/ by scripts/build-course-catalog.js.
 const NUM_QUESTIONS = 5;
+// A quiz mixing many chapters is slow to generate. Keep in sync with generate-quiz.js.
+const MAX_CHAPTERS = 8;
 
 // Front matter and reading lists make poor quiz material, so they get no quiz.
 const SKIPPED = /^(preface|further reading|primary sources)/i;
@@ -33,6 +35,8 @@ const courseGrid = document.getElementById("course-grid");
 const chapterSection = document.getElementById("chapter-section");
 const chapterHeading = document.getElementById("chapter-heading");
 const chapterList = document.getElementById("chapter-list");
+const selectionHint = document.getElementById("selection-hint");
+const generateBtn = document.getElementById("generate-btn");
 const retryBtn = document.getElementById("retry-btn");
 const errorMessage = document.getElementById("error-message");
 const quizCourseName = document.getElementById("quiz-course-name");
@@ -52,7 +56,7 @@ let currentIndex = 0;
 let score = 0;
 let selectedCategory = CATALOG[0];
 let selectedCourse = null;
-let selectedChapter = null;
+let selectedChapters = new Set();
 
 function showScreen(name) {
   Object.entries(screens).forEach(([key, el]) => {
@@ -77,7 +81,7 @@ function renderCategories() {
 function selectCategory(category) {
   selectedCategory = category;
   selectedCourse = null;
-  selectedChapter = null;
+  selectedChapters = new Set();
   renderCategories();
   renderCourses();
   renderChapters();
@@ -115,10 +119,15 @@ function scrollToChapters() {
 
 function selectCourse(course) {
   selectedCourse = course;
-  selectedChapter = null;
+  selectedChapters = new Set();
   renderCourses();
   renderChapters();
   scrollToChapters();
+}
+
+// Ticked chapters in course order (not in the order they were ticked).
+function chosenChapters() {
+  return selectedCourse.chapters.filter((chapter) => selectedChapters.has(chapter.id));
 }
 
 function renderChapters() {
@@ -126,14 +135,23 @@ function renderChapters() {
   chapterList.innerHTML = "";
   if (!selectedCourse) return;
 
-  chapterHeading.textContent = `${selectedCourse.name}: pick a chapter to start its quiz`;
-
   selectedCourse.chapters
     .filter((chapter) => !SKIPPED.test(chapter.title))
     .forEach((chapter) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "chapter-item";
+      const label = document.createElement("label");
+      label.className = "chapter-item";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = selectedChapters.has(chapter.id);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          selectedChapters.add(chapter.id);
+        } else {
+          selectedChapters.delete(chapter.id);
+        }
+        updateSelection();
+      });
 
       // File ids look like "03-internal-rate-of-return"; show the "03".
       const number = document.createElement("span");
@@ -141,11 +159,28 @@ function renderChapters() {
       number.textContent = chapter.id.split("-")[0];
       const title = document.createElement("span");
       title.textContent = chapter.title;
-      btn.append(number, title);
 
-      btn.addEventListener("click", () => handleGenerate(chapter));
-      chapterList.appendChild(btn);
+      label.append(checkbox, number, title);
+      chapterList.appendChild(label);
     });
+
+  updateSelection();
+}
+
+function updateSelection() {
+  const count = selectedChapters.size;
+  generateBtn.disabled = count === 0;
+  generateBtn.textContent =
+    count === 0 ? "Generate quiz" : `Generate quiz from ${count} chapter${count === 1 ? "" : "s"}`;
+  selectionHint.textContent =
+    count === 0
+      ? `Tick up to ${MAX_CHAPTERS} chapters from this course.`
+      : `${count} of ${MAX_CHAPTERS} chapters selected.`;
+
+  // At the limit, the other chapters can't be ticked until one is unticked.
+  chapterList.querySelectorAll("input:not(:checked)").forEach((box) => {
+    box.disabled = count >= MAX_CHAPTERS;
+  });
 }
 
 async function fetchQuiz() {
@@ -155,7 +190,7 @@ async function fetchQuiz() {
     body: JSON.stringify({
       category: selectedCategory.id,
       course: selectedCourse.code,
-      chapter: selectedChapter.id,
+      chapters: chosenChapters().map((chapter) => chapter.id),
       numQuestions: NUM_QUESTIONS,
     }),
   });
@@ -167,10 +202,8 @@ async function fetchQuiz() {
   return response.json();
 }
 
-// chapter is omitted when retrying after an error (the choice is still stored).
-async function handleGenerate(chapter = selectedChapter) {
-  if (!selectedCourse || !chapter) return;
-  selectedChapter = chapter;
+async function handleGenerate() {
+  if (!selectedCourse || selectedChapters.size === 0) return;
   showScreen("loading");
 
   try {
@@ -190,7 +223,9 @@ async function handleGenerate(chapter = selectedChapter) {
 function renderQuestion() {
   const question = quiz.questions[currentIndex];
 
-  quizCourseName.textContent = `${selectedCourse.code} · ${selectedChapter.title}`;
+  const chosen = chosenChapters();
+  quizCourseName.textContent =
+    `${selectedCourse.code} · ` + (chosen.length === 1 ? chosen[0].title : `${chosen.length} chapters`);
   questionCounter.textContent = `Question ${currentIndex + 1} of ${quiz.questions.length}`;
   progressFill.style.width = `${(currentIndex / quiz.questions.length) * 100}%`;
   questionText.textContent = question.question;
@@ -256,12 +291,12 @@ function handleRestart() {
   quiz = null;
   currentIndex = 0;
   score = 0;
-  selectedChapter = null;
   showScreen("select");
   scrollToChapters();
 }
 
-retryBtn.addEventListener("click", () => handleGenerate());
+generateBtn.addEventListener("click", handleGenerate);
+retryBtn.addEventListener("click", handleGenerate);
 nextBtn.addEventListener("click", handleNext);
 restartBtn.addEventListener("click", handleRestart);
 

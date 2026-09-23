@@ -24,8 +24,13 @@
       <div id="course-grid" class="course-grid"></div>
 
       <div id="chapter-section" class="chapter-section hidden">
-        <h2 id="chapter-heading">Pick a chapter to start its quiz</h2>
+        <h2 id="chapter-heading">Tick the chapters to quiz on</h2>
         <div id="chapter-list" class="chapter-list"></div>
+
+        <div class="generate-bar">
+          <p id="selection-hint" class="selection-hint" aria-live="polite"></p>
+          <button id="generate-btn" type="button" disabled>Generate quiz</button>
+        </div>
       </div>
     </section>
 
@@ -62,7 +67,7 @@
       <p class="eyebrow">Results</p>
       <h2 class="page-title">Quiz <em>complete</em></h2>
       <p id="score-text" class="score-text"></p>
-      <button id="restart-btn" type="button">Choose another chapter</button>
+      <button id="restart-btn" type="button">Back to chapters</button>
     </section>
   </main>
 
