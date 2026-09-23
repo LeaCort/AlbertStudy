@@ -2,7 +2,14 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
-const MODEL = "gemini-3.8-flash";
+// Tried in order. On the free tier each model has its own daily quota and is
+// often overloaded, so a lighter, faster model backs up the main one.
+const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
+// 429 = quota exceeded, 500/503/504 = Google side overloaded or down.
+const FALLBACK_STATUSES = new Set([429, 500, 503, 504]);
+// A fallback call takes ~4 s: past this point it would not finish before the
+// Netlify function timeout (~10 s), so we give up instead.
+const FALLBACK_DEADLINE_MS = 5000;
 const DATA_DIR = path.join(process.cwd(), "DATA");
 const PROMPT_FILE = path.join(process.cwd(), "PROMPT", "Quizz7.txt");
 
@@ -64,22 +71,29 @@ function questionRange(numQuestions) {
 // The key is read on the server only: the browser never sees it.
 async function askGemini(prompt) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  try {
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        // Less "thinking" before answering keeps us under the function timeout.
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-      },
-    });
-    return response.text;
-  } catch (err) {
-    // Keep the details (quota, network, bad key) in the logs, not in the response.
-    console.error("Gemini call failed:", err);
-    throw new UpstreamError("The quiz generator is unavailable, try again later");
+  const startedAt = Date.now();
+
+  for (const model of MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          // Less "thinking" before answering keeps us under the function timeout.
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        },
+      });
+      return response.text;
+    } catch (err) {
+      // Keep the details (quota, network, bad key) in the logs, not in the response.
+      console.error(`Gemini call failed with ${model}:`, err);
+      const canFallBack =
+        FALLBACK_STATUSES.has(err.status) && Date.now() - startedAt < FALLBACK_DEADLINE_MS;
+      if (!canFallBack) break;
+    }
   }
+  throw new UpstreamError("The quiz generator is unavailable, try again later");
 }
 
 // Only checks that the answer is a quiz at all. Validating each question
