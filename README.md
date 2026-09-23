@@ -42,12 +42,12 @@ Everyone creates their own key for local work. Nobody shares a key: the producti
 
 ### `POST /.netlify/functions/generate-quiz`
 
-Generates a multiple-choice quiz from one chapter.
+Generates a multiple-choice quiz from one or several chapters of the same course (1 to 8; notes are sent to the model in course order).
 
 Request:
 
 ```json
-{ "category": "DAT", "course": "DAT32-91", "chapter": "08-prompting-as-a-craft", "numQuestions": 5 }
+{ "category": "DAT", "course": "DAT32-91", "chapters": ["06-how-a-language-model-generates-text", "08-prompting-as-a-craft"], "numQuestions": 5 }
 ```
 
 Response:
@@ -70,7 +70,7 @@ Response:
 
 | Status | Meaning |
 |---|---|
-| 400 | Invalid body, or unknown category, course or chapter |
+| 400 | Invalid body, `chapters` not a list of 1 to 8 names, or unknown category, course or chapter |
 | 405 | Method other than `POST` |
 | 500 | Server misconfigured (no API key) |
 | 502 | The AI provider is unavailable or returned an unusable answer: try again |
@@ -78,7 +78,7 @@ Response:
 ## Design choices and trade-offs
 
 - **The API key never reaches the browser.** Everything sent to the browser can be read by the user, so the AI is only called from a serverless function running on Netlify. The browser only sees the question and the answer.
-- **Course files are whitelisted, never built from user input.** The function compares `category`, `course` and `chapter` to the folders and files that really exist in `DATA/`. Building the path by concatenation would let a request such as `"chapter": "../../.env"` read the server's secrets.
+- **Course files are whitelisted, never built from user input.** The function compares `category`, `course` and every entry of `chapters` to the folders and files that really exist in `DATA/`. Building the path by concatenation would let a request such as `"chapters": ["../../.env"]` read the server's secrets.
 - **Google Gemini instead of Anthropic,** because Gemini has a free tier and the Anthropic API does not.
 - **Free tier trade-off:** on the free tier, Google may use the requests to improve its models. We accept it because the only data sent is public course notes, never personal data.
 - **Small and fast:** a Netlify function is stopped after about 10 seconds. The quiz is therefore capped at 5 questions and uses a fast "Flash" model with reduced reasoning.
