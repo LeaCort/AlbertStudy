@@ -1,6 +1,6 @@
 // CATALOG (categories > courses > chapters) comes from courses.js, which is
 // generated from DATA/ by scripts/build-course-catalog.js.
-const NUM_QUESTIONS = 5;
+const NUM_QUESTIONS = 10;
 // A quiz mixing many chapters is slow to generate. Keep in sync with generate-quiz.js.
 const MAX_CHAPTERS = 8;
 

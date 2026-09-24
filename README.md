@@ -47,7 +47,7 @@ Generates a multiple-choice quiz from one or several chapters of the same course
 Request:
 
 ```json
-{ "category": "DAT", "course": "DAT32-91", "chapters": ["06-how-a-language-model-generates-text", "08-prompting-as-a-craft"], "numQuestions": 5 }
+{ "category": "DAT", "course": "DAT32-91", "chapters": ["06-how-a-language-model-generates-text", "08-prompting-as-a-craft"], "numQuestions": 10 }
 ```
 
 Response:
@@ -81,4 +81,4 @@ Response:
 - **Course files are whitelisted, never built from user input.** The function compares `category`, `course` and every entry of `chapters` to the folders and files that really exist in `DATA/`. Building the path by concatenation would let a request such as `"chapters": ["../../.env"]` read the server's secrets.
 - **Google Gemini instead of Anthropic,** because Gemini has a free tier and the Anthropic API does not.
 - **Free tier trade-off:** on the free tier, Google may use the requests to improve its models. We accept it because the only data sent is public course notes, never personal data.
-- **Small and fast:** a Netlify function is stopped after about 10 seconds. The quiz is therefore capped at 5 questions and uses a fast "Flash" model with reduced reasoning.
+- **Small and fast:** a Netlify function is stopped after about 10 seconds, and one call to the model only has time to write about 5 questions. A quiz of up to 10 questions is therefore split into two calls running side by side, each on its own half of the notes (cut between paragraphs, so the two halves do not give the same questions). They use a fast "Flash" model with reduced reasoning. Trade-off: each quiz uses two requests of the free daily quota.

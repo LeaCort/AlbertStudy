@@ -13,10 +13,12 @@ const FALLBACK_DEADLINE_MS = 5000;
 const DATA_DIR = path.join(process.cwd(), "DATA");
 const PROMPT_FILE = path.join(process.cwd(), "PROMPT", "Quizz7.txt");
 
-// The prompt asks for "between MIN and MAX" questions. MAX is capped so the
-// model answers before the Netlify function timeout (~10 s).
+// The prompt asks for "between MIN and MAX" questions. One call can only write
+// about 5 before the Netlify function timeout (~10 s), so a longer quiz is
+// split into parallel calls, each on its own part of the notes.
 const MIN_QUESTIONS = 3;
-const MAX_QUESTIONS = 5;
+const MAX_QUESTIONS = 10;
+const MAX_QUESTIONS_PER_CALL = 5;
 const MIN_QUOTE_LENGTH = 20;
 // More chapters means a longer prompt and a slower answer, so the count is capped.
 const MAX_CHAPTERS = 8;
@@ -70,10 +72,53 @@ function fillTemplate(template, values) {
   );
 }
 
-function questionRange(numQuestions) {
+function questionCount(numQuestions) {
   const requested = Number.isInteger(numQuestions) ? numQuestions : MAX_QUESTIONS;
-  const max = Math.min(Math.max(requested, MIN_QUESTIONS), MAX_QUESTIONS);
-  return { min: MIN_QUESTIONS, max };
+  return Math.min(Math.max(requested, MIN_QUESTIONS), MAX_QUESTIONS);
+}
+
+// Cuts the notes into `parts` pieces of similar size, only at blank lines so
+// no paragraph (and, with several chapters, rarely a chapter) is cut in two.
+// Each call gets a different piece, so the calls don't ask the same questions.
+// Notes with too few paragraphs give fewer pieces.
+function splitNotes(notes, parts) {
+  const paragraphs = notes.split(/\n\s*\n/);
+  const targetSize = notes.length / parts;
+  const pieces = [];
+  let current = [];
+  let currentSize = 0;
+  for (const paragraph of paragraphs) {
+    current.push(paragraph);
+    currentSize += paragraph.length;
+    if (currentSize >= targetSize && pieces.length < parts - 1) {
+      pieces.push(current.join("\n\n"));
+      current = [];
+      currentSize = 0;
+    }
+  }
+  pieces.push(current.join("\n\n"));
+  return pieces.filter((piece) => piece.trim());
+}
+
+// One Gemini call per piece of the notes, each asking for its share of the quiz.
+function planCalls(notes, count) {
+  const pieces = splitNotes(notes, Math.ceil(count / MAX_QUESTIONS_PER_CALL));
+  const max = Math.min(Math.ceil(count / pieces.length), MAX_QUESTIONS_PER_CALL);
+  const min = Math.min(Math.ceil(MIN_QUESTIONS / pieces.length), max);
+  return pieces.map((piece) => ({ notes: piece, min, max }));
+}
+
+// The same question can come back from two calls when the pieces overlap in
+// content; only the first one is kept.
+function dropDuplicateQuestions(questions) {
+  const seen = new Set();
+  return questions.filter((question) => {
+    if (typeof question.question !== "string") return true;
+    const key = question.question.replace(/\s+/g, " ").trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // The key is read on the server only: the browser never sees it.
@@ -183,7 +228,7 @@ export default async (req) => {
 
   try {
     const { courseName, chapterPaths } = await resolveChapters(category, course, chapters);
-    const { min, max } = questionRange(numQuestions);
+    const count = questionCount(numQuestions);
 
     const [template, ...chapterNotes] = await Promise.all([
       readFile(PROMPT_FILE, "utf8"),
@@ -191,15 +236,25 @@ export default async (req) => {
     ]);
     const notes = chapterNotes.join("\n\n");
 
-    const prompt = fillTemplate(template, {
-      COURSE_NAME: courseName,
-      COURSE_NOTES: notes,
-      MIN_QUESTIONS: min,
-      MAX_QUESTIONS: max,
-    });
+    // The calls run side by side, so the quiz takes about as long as one call.
+    // If one of them fails, the questions of the others are still returned.
+    const results = await Promise.allSettled(
+      planCalls(notes, count).map(async (call) => {
+        const prompt = fillTemplate(template, {
+          COURSE_NAME: courseName,
+          COURSE_NOTES: call.notes,
+          MIN_QUESTIONS: call.min,
+          MAX_QUESTIONS: call.max,
+        });
+        return parseQuiz(await askGemini(prompt)).questions;
+      })
+    );
+    const answered = results.filter((result) => result.status === "fulfilled");
+    if (answered.length === 0) throw results[0].reason;
 
-    const quiz = parseQuiz(await askGemini(prompt));
-    const questions = keepGroundedQuestions(quiz.questions, notes);
+    const generated = dropDuplicateQuestions(answered.flatMap((result) => result.value));
+    // Quotes are checked against all the notes: a piece is part of them.
+    const questions = keepGroundedQuestions(generated, notes).slice(0, count);
 
     // The course name comes from DATA/, not from the model, so it is always right.
     return Response.json({ course: courseName, questions });
