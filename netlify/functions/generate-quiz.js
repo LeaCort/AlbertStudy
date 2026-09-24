@@ -166,20 +166,30 @@ function parseQuiz(rawText) {
   return quiz;
 }
 
-// Chapters are hard-wrapped, so a sentence quoted by the model can span
-// several lines in the notes: quotes are compared with whitespace collapsed.
-function collapseWhitespace(text) {
-  return text.replace(/\s+/g, " ").trim();
+// The notes come from PDFs: they are hard-wrapped and contain characters a
+// model rarely copies exactly (mathematical italics like 𝑟, curly quotes,
+// dashes, soft hyphens). Both the notes and the quote are reduced to a plain
+// form before comparing, so a faithful quote is not rejected for typography.
+function normalizeForMatching(text) {
+  return text
+    .replace(/\u00AD\s*/g, "") // soft hyphen at a line break: "discount-\ning" -> "discounting"
+    .normalize("NFKC") // 𝑟 -> r, ﬁ -> fi, non-breaking space -> space
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, "")
+    .replace(/[\u2018\u2019\u201B\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, "-") // hyphens, en/em dashes, minus sign
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Drops every question whose source_quote cannot be found in the notes:
 // a quote the model made up means the question may not be grounded either.
 // Very short quotes ("NPV") would match almost anything, so they are refused.
 function keepGroundedQuestions(questions, notes) {
-  const searchableNotes = collapseWhitespace(notes);
+  const searchableNotes = normalizeForMatching(notes);
   const grounded = questions.filter((question) => {
     if (typeof question.source_quote !== "string") return false;
-    const quote = collapseWhitespace(question.source_quote);
+    const quote = normalizeForMatching(question.source_quote);
     return quote.length >= MIN_QUOTE_LENGTH && searchableNotes.includes(quote);
   });
 
